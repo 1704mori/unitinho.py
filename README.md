@@ -14,4 +14,6 @@ pip install -r requirements.txt
 python main.py
 
 # we use BOT_TOKEN and BOT_PREFIX environment variables.
+
+# ffprobe must be installed 
 ```
