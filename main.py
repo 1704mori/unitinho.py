@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import os
 
 import discord
@@ -24,5 +25,11 @@ async def on_ready():
             print(f"Loaded cog {cog}")
     
     print("bot is ready")
+
+@client.command()
+@commands.has_permissions(manage_guild=True)
+async def sync(ctx: commands.Context):
+    synced = await ctx.bot.tree.sync()
+    await ctx.send(f'Command tree synced {len(synced)} commands.')
 
 client.run(os.getenv("BOT_TOKEN"))

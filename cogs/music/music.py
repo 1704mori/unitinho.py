@@ -2,34 +2,17 @@ import asyncio
 import functools
 import math
 import random
+import aiohttp
+import traceback
+import subprocess
+import json
 
 import discord
 from discord.ext import commands
+from discord import app_commands
 
-from .ytdl import YTDLError, YTDLSource
-
-
-class SongQueue(asyncio.Queue):
-    def __getitem__(self, item):
-        if isinstance(item, slice):
-            return list(itertools.islice(self._queue, item.start, item.stop, item.step))
-        else:
-            return self._queue[item]
-
-    def __iter__(self):
-        return self._queue.__iter__()
-
-    def __len__(self):
-        return self.qsize()
-
-    def clear(self):
-        self._queue.clear()
-
-    def shuffle(self):
-        random.shuffle(self._queue)
-
-    def remove(self, index: int):
-        del self._queue[index]
+from .ytdl import YTDLError, YTDLSource, FFMPEG_OPTIONS
+from .queue import SongQueue
 
 class Song:
     __slots__ = ('source', 'requester')
@@ -157,9 +140,36 @@ class Music(commands.Cog):
         ctx.voice_state = self.get_voice_state(ctx)
 
     async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError):
+        traceback.print_exc(error)
         await ctx.send('An error occurred: {}'.format(str(error)))
 
-    @commands.command(name='join', invoke_without_subcommand=True)
+    async def is_audio_url(self, url: str):
+        """Checks if the provided URL points to an audio file."""
+        async with aiohttp.ClientSession() as session:
+            async with session.head(url) as response:
+                content_type = response.headers.get('Content-Type', '')
+                return content_type.startswith('audio/')
+
+    async def create_audio_source(self, ctx: commands.Context, url: str):
+        """Handles generic audio URLs."""
+        async with aiohttp.ClientSession() as session:
+            async with session.head(url) as response:
+                content_type = response.headers.get('Content-Type', '')
+                title = url.split('/')[-1]  # Use the filename or fallback as the title.
+
+        return self(ctx, discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS), data={
+            'title': title,
+            'url': url,
+            'uploader': 'Direct Audio URL',
+            'uploader_url': None,
+            'thumbnail': None,
+            'duration': 0,  # Unknown for direct audio URLs
+            'views': None,
+            'like_count': None,
+            'dislike_count': None,
+        })
+
+    @commands.hybrid_command(name='join', invoke_without_subcommand=True)
     async def _join(self, ctx: commands.Context):
         """Joins a voice channel."""
 
@@ -170,7 +180,7 @@ class Music(commands.Cog):
 
         ctx.voice_state.voice = await destination.connect()
 
-    @commands.command(name='summon')
+    @commands.hybrid_command(name='summon')
     @commands.has_permissions(manage_guild=True)
     async def _summon(self, ctx: commands.Context, *, channel: discord.VoiceChannel = None):
         """Summons the bot to a voice channel.
@@ -199,7 +209,7 @@ class Music(commands.Cog):
         await ctx.voice_state.stop()
         del self.voice_states[ctx.guild.id]
 
-    @commands.command(name='volume')
+    @commands.hybrid_command(name='volume')
     async def _volume(self, ctx: commands.Context, *, volume: int):
         """Sets the volume of the player."""
 
@@ -212,13 +222,13 @@ class Music(commands.Cog):
         ctx.voice_state.volume = volume / 100
         await ctx.send('Volume of the player set to {}%'.format(volume))
 
-    @commands.command(name='now', aliases=['current', 'playing'])
+    @commands.hybrid_command(name='now', aliases=['current', 'playing'])
     async def _now(self, ctx: commands.Context):
         """Displays the currently playing song."""
 
         await ctx.send(embed=ctx.voice_state.current.create_embed())
 
-    @commands.command(name='pause')
+    @commands.hybrid_command(name='pause')
     @commands.has_permissions(manage_guild=True)
     async def _pause(self, ctx: commands.Context):
         """Pauses the currently playing song."""
@@ -227,7 +237,7 @@ class Music(commands.Cog):
             ctx.voice_state.voice.pause()
             await ctx.message.add_reaction('⏯')
 
-    @commands.command(name='resume')
+    @commands.hybrid_command(name='resume')
     @commands.has_permissions(manage_guild=True)
     async def _resume(self, ctx: commands.Context):
         """Resumes a currently paused song."""
@@ -236,7 +246,7 @@ class Music(commands.Cog):
             ctx.voice_state.voice.resume()
             await ctx.message.add_reaction('⏯')
 
-    @commands.command(name='stop')
+    @commands.hybrid_command(name='stop')
     @commands.has_permissions(manage_guild=True)
     async def _stop(self, ctx: commands.Context):
         """Stops playing song and clears the queue."""
@@ -247,7 +257,7 @@ class Music(commands.Cog):
             ctx.voice_state.voice.stop()
             await ctx.message.add_reaction('⏹')
 
-    @commands.command(name='skip')
+    @commands.hybrid_command(name='skip')
     async def _skip(self, ctx: commands.Context):
         """Vote to skip a song. The requester can automatically skip.
         3 skip votes are needed for the song to be skipped.
@@ -274,7 +284,7 @@ class Music(commands.Cog):
         else:
             await ctx.send('You have already voted to skip this song.')
 
-    @commands.command(name='queue')
+    @commands.hybrid_command(name='queue')
     async def _queue(self, ctx: commands.Context, *, page: int = 1):
         """Shows the player's queue.
 
@@ -298,7 +308,7 @@ class Music(commands.Cog):
                  .set_footer(text='Viewing page {}/{}'.format(page, pages)))
         await ctx.send(embed=embed)
 
-    @commands.command(name='shuffle')
+    @commands.hybrid_command(name='shuffle')
     async def _shuffle(self, ctx: commands.Context):
         """Shuffles the queue."""
 
@@ -308,7 +318,7 @@ class Music(commands.Cog):
         ctx.voice_state.songs.shuffle()
         await ctx.message.add_reaction('✅')
 
-    @commands.command(name='remove')
+    @commands.hybrid_command(name='remove')
     async def _remove(self, ctx: commands.Context, index: int):
         """Removes a song from the queue at a given index."""
 
@@ -318,7 +328,7 @@ class Music(commands.Cog):
         ctx.voice_state.songs.remove(index - 1)
         await ctx.message.add_reaction('✅')
 
-    @commands.command(name='loop')
+    @commands.hybrid_command(name='loop')
     async def _loop(self, ctx: commands.Context):
         """Loops the currently playing song.
 
@@ -332,15 +342,56 @@ class Music(commands.Cog):
         ctx.voice_state.loop = not ctx.voice_state.loop
         await ctx.message.add_reaction('✅')
 
-    @commands.command(name='play')
+    async def get_metadata_with_ffprobe(self, url: str):
+        """
+        Uses ffprobe to extract metadata from a direct audio URL.
+        """
+        command = [
+            'ffprobe', '-hide_banner', '-loglevel', 'error',
+            '-print_format', 'json',
+            '-show_format', '-show_streams', url
+        ]
+        try:
+            # Run ffprobe as a subprocess and capture the output
+            result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            metadata = json.loads(result.stdout)
+            return metadata
+        except Exception as e:
+            print(f"Error extracting metadata with ffprobe: {e}")
+            return {}
+
+    async def create_audio_source(self, ctx: commands.Context, url: str):
+        """Handles generic audio URLs with metadata extraction."""
+        async with aiohttp.ClientSession() as session:
+            async with session.head(url) as response:
+                content_type = response.headers.get('Content-Type', '')
+                title = url.split('/')[-1]  # Use the filename or fallback as the title.
+
+                # Extract additional metadata
+                metadata = await self.get_metadata_with_ffprobe(url)
+                duration = 0  # Default duration
+                if 'format' in metadata and 'duration' in metadata['format']:
+                    duration = int(float(metadata['format']['duration']))  # Convert to seconds if available
+
+                return YTDLSource(ctx, discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS), data={
+                    'title': title,
+                    'url': url,
+                    'uploader': 'Direct Audio URL',
+                    'uploader_url': None,
+                    'thumbnail': 'http://example.com',
+                    'upload_date': 'None',
+                    'duration': duration,
+                    'views': None,
+                    'like_count': None,
+                    'dislike_count': None,
+                })
+
+    @commands.hybrid_command(name='play')
     async def _play(self, ctx: commands.Context, *, search: str):
         """Plays a song.
 
         If there are songs in the queue, this will be queued until the
         other songs finished playing.
-
-        This command automatically searches from various sites if no URL is provided.
-        A list of these sites can be found here: https://rg3.github.io/youtube-dl/supportedsites.html
         """
 
         if not ctx.voice_state.voice:
@@ -348,12 +399,16 @@ class Music(commands.Cog):
 
         async with ctx.typing():
             try:
-                source = await YTDLSource.create_source(ctx, search, loop=self.bot.loop)
+                if 'spotify.com' in search:
+                    source = await YTDLSource.handle_spotify_url(ctx, search)
+                elif await self.is_audio_url(search):
+                    source = await self.create_audio_source(ctx, search)
+                else:
+                    source = await YTDLSource.create_source(ctx, search, loop=self.bot.loop)
             except YTDLError as e:
                 await ctx.send('An error occurred while processing this request: {}'.format(str(e)))
             else:
                 song = Song(source)
-
                 await ctx.voice_state.songs.put(song)
                 await ctx.send('Enqueued {}'.format(str(source)))
 
@@ -367,5 +422,5 @@ class Music(commands.Cog):
             if ctx.voice_client.channel != ctx.author.voice.channel:
                 raise commands.CommandError('Bot is already in a voice channel.')
 
-async def setup(bot):
+async def setup(bot: commands.bot.Bot):
     await bot.add_cog(Music(bot))
