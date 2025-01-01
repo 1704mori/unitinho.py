@@ -1,5 +1,6 @@
 import asyncio
 import random
+import itertools
 
 class SongQueue(asyncio.Queue):
     def __getitem__(self, item):
