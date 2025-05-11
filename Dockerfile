@@ -1,11 +1,16 @@
-FROM python:3.9-alpine
+FROM alpine:3.21
 
 RUN apk update && apk add --no-cache \
-    ffmpeg \
+    python3 \
+    python3-dev \
+    py3-pip \
     bash \
+    ffmpeg \
     libmagic \
     build-base \
     && rm -rf /var/cache/apk/*
+
+RUN ln -sf python3 /usr/bin/python
 
 WORKDIR /app
 
