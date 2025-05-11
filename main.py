@@ -36,7 +36,7 @@ async def sync(ctx: commands.Context):
 
 @client.command()
 async def help(ctx, args=None):
-    help_embed = discord.Embed(title="My Bot's Help!")
+    help_embed = discord.Embed(title=f"{os.getenv("BOT_NAME")}'s Help!")
     command_names_list = [x.name for x in client.commands]
 
     if not args:
