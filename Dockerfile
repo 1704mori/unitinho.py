@@ -5,8 +5,6 @@ RUN apk update && apk add --no-cache \
     bash \
     libmagic \
     build-base \
-    libffi-dev \
-    libssl1.1 \
     && rm -rf /var/cache/apk/*
 
 WORKDIR /app
