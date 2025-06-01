@@ -1,19 +1,24 @@
+# unitinho.py
+
+A simple python Discord bot.
+
+## Overview
+
+unitinho.py is a simple and lightweight music bot for Discord.
+
+## Installation
+
+Clone the repository and install any dependencies:
+
 ```bash
-$ python -m venv .venv
-
-# windows
-.venv\Scripts\activate
-
-# unix 
+git clone https://github.com/1704mori/unitinho.py.git
+cd unitinho.py
+python -m venv .venv
 source .venv/bin/activate
-
-# then
 pip install -r requirements.txt
-
-# and
-python main.py
-
-# we use BOT_TOKEN and BOT_PREFIX environment variables.
-
-# ffprobe must be installed 
 ```
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 (GLP v3).  
+See the [LICENSE](LICENSE) file for more details.
